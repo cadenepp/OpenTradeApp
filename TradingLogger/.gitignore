@@ -1,0 +1,113 @@
+############################
+# OS
+############################
+.DS_Store
+Thumbs.db
+
+############################
+# ENV / Secrets
+############################
+.env
+.env.*
+!.env.example
+
+############################
+# Node / React Native / Expo
+############################
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.expo/
+.expo-shared/
+expo-env.d.ts
+
+web-build/
+dist/
+build/
+
+# Metro / RN cache
+.metro-cache/
+.metro/
+haste-map-*
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+
+############################
+# React Native specific
+############################
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/.idea/
+android/*.iml
+
+ios/build/
+ios/Pods/
+ios/DerivedData/
+ios/*.xcworkspace
+ios/*.xcodeproj/project.xcworkspace
+
+############################
+# Expo Router
+############################
+app.config.local.*
+app.config.*.local.*
+
+############################
+# Testing
+############################
+coverage/
+.jest/
+
+############################
+# IDEs
+############################
+.vscode/
+.idea/
+*.iml
+
+############################
+# Java / Spring Boot
+############################
+target/
+build/
+out/
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+
+# Gradle
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+############################
+# Spring Boot
+############################
+*.jar
+*.war
+*.ear
+*.class
+
+############################
+# Mongo / Local DB files (if any)
+############################
+data/
+dump/
+
+############################
+# Misc
+############################
+*.swp
+*.swo
+*.tmp
+*.bak

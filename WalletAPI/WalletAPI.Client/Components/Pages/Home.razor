@@ -1,0 +1,154 @@
+﻿@page "/"
+
+<PageTitle>ETH Wallet Search</PageTitle>
+
+<div class="container py-5">
+
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="p-4 p-md-5 bg-light border rounded-4 shadow-sm">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                    <div>
+                        <span class="badge text-bg-primary me-2">Adv .NET</span>
+                        <span class="badge text-bg-dark">Secure Data Aggregation</span>
+
+                        <h1 class="display-6 mt-3 mb-2">ETH Network Wallet Search</h1>
+                        <p class="lead mb-0 text-muted">
+                            Look up Ethereum wallets and view balances + transactions in a clean dashboard.
+                            Built with modern .NET architecture, Neon DB, and OpenIddict.
+                        </p>
+                    </div>
+
+                    <div class="d-flex flex-column gap-2">
+                        <a class="btn btn-dark btn-lg" href="/search">
+                            <i class="bi bi-search me-2"></i>Search a Wallet
+                        </a>
+                        <a class="btn btn-outline-secondary" href="/about">
+                            <i class="bi bi-info-circle me-2"></i>Learn More
+                        </a>
+                    </div>
+                </div>
+
+                <hr class="my-4" />
+
+                <div class="d-flex flex-wrap gap-2 small text-muted">
+                    <span class="me-2"><i class="bi bi-shield-lock me-1"></i>OpenIddict + RBAC</span>
+                    <span class="me-2"><i class="bi bi-database me-1"></i>Neon (PostgreSQL)</span>
+                    <span class="me-2"><i class="bi bi-box-arrow-in-right me-1"></i>EF Core + Migrations</span>
+                    <span class="me-2"><i class="bi bi-link-45deg me-1"></i>Moralis API</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row justify-content-center g-4 mt-4">
+        <div class="col-lg-10">
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4">
+                            <h3 class="h6 mb-2">
+                                <i class="bi bi-lightning-charge me-2"></i>Live Blockchain Data
+                            </h3>
+                            <p class="mb-0 text-muted">
+                                Pull current balances and transactions using Moralis endpoints.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4">
+                            <h3 class="h6 mb-2">
+                                <i class="bi bi-star me-2"></i>Favorites & History
+                            </h3>
+                            <p class="mb-0 text-muted">
+                                Signed-in users can save searches and quickly revisit them later.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card h-100 border-0 shadow-sm">
+                        <div class="card-body p-4">
+                            <h3 class="h6 mb-2">
+                                <i class="bi bi-shield-check me-2"></i>Secure by Design
+                            </h3>
+                            <p class="mb-0 text-muted">
+                                Self-hosted auth with OpenIddict and role-based access control.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row justify-content-center mt-5">
+        <div class="col-lg-10">
+            <div class="border rounded-4 p-4 p-md-5">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+                    <h2 class="h4 mb-0">How it works</h2>
+                    <a class="btn btn-outline-dark btn-sm"
+                       href="https://github.com/cadenepp/MoralisWalletAPI"
+                       target="_blank" rel="noopener">
+                        <i class="bi bi-github me-2"></i>GitHub Repo
+                    </a>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="p-3 bg-light border rounded-3 h-100">
+                            <div class="fw-semibold mb-1">1) Search</div>
+                            <div class="text-muted small">
+                                Enter an ETH wallet address to query blockchain data.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 bg-light border rounded-3 h-100">
+                            <div class="fw-semibold mb-1">2) View Results</div>
+                            <div class="text-muted small">
+                                See balances and transaction activity in the dashboard.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 bg-light border rounded-3 h-100">
+                            <div class="fw-semibold mb-1">3) Save (Optional)</div>
+                            <div class="text-muted small">
+                                Sign in to favorite searches and build history.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-secondary mt-4 mb-0">
+                    <strong>Architecture:</strong> UI → Services → Repositories → EF Core (Neon DB) with OpenIddict
+                    handling authentication and roles.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row justify-content-center mt-5">
+        <div class="col-lg-10">
+            <div class="text-center text-muted small">
+                <p class="mb-2">
+                    Built for Advanced .NET • Secure Data Aggregation Platform Prototype • Instructor: Jarrett Plate
+                </p>
+                <div class="d-flex justify-content-center gap-2">
+                    <a class="btn btn-dark" href="/search">
+                        <i class="bi bi-search me-2"></i>Get Started
+                    </a>
+                    <a class="btn btn-outline-secondary" href="/account/login">
+                        <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>

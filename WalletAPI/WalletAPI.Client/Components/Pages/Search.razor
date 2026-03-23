@@ -1,0 +1,233 @@
+@page "/search"
+@using WalletAPI.Application.DTOs
+@using WalletAPI.Application.ServiceInterfaces
+@using WalletAPI.Application.Services
+@using WalletAPI.Domain.Models
+@rendermode InteractiveServer
+@inject BalanceService balanceService
+@inject ISearchFeatureService SFS
+@inject BookmarkService BS
+
+
+<h3>Search for any Wallet on the ETH Network</h3>
+
+<main class="w-auto">
+    
+    <div class="row mx-15 container-fluid">
+        <div class="row">
+            <input class="col-md-8" @bind="_walletAddress" placeholder="Enter the Address"/>
+            <input class="col-md-3" type="number" @bind="_transQuantity" placeholder="Number of Transactions"/>
+            <button class="btn btn-primary col-md-1" @onclick="async () => await SearchAddress(_walletAddress)"> Search </button>
+        </div>
+    </div>
+
+    @* TODO: configure favorite button depending on login status *@
+    <div class="mt-5 container-fluid">
+        <div class="row d-flex flex-column">
+            @if (!_error && _firstBalance is not null)
+            {
+                <div class="d-flex justify-content-center align-items-center ">
+                    <div class="card text-dark bg-light mb-3 w-100" style="max-width: 50rem; ">
+                        <div class="card-header  d-flex flex-row justify-content-between">
+                            <h4 class="card-title">Name: @_firstBalance.Name</h4>
+                            <button @onclick="BookMarkItem" class="bg-primary rounded-1 border-0">⭐</button>
+                            </div>
+                        <div class="card-body">
+                            <p class="card-text">Token Address: @_firstBalance.Token_Address</p>
+                            <p class="card-text">Token Symbol: @_firstBalance.Symbol</p>
+                            <p class="card-text">Token Balance: @_firstBalance.Balance_Formatted</p>
+                            <p class="card-text">Verified Contract: @YesOrNo(_firstBalance.Verified_Contract)</p>
+                            <p class="card-text">Possible Spam: @YesOrNo(_firstBalance.Possible_Spam)</p>
+                        </div>
+                        <div class="card-footer">
+                            @if (_allBalances.Count > 1)
+                            {
+                                <button @onclick="MoreBalOnClick" class="btn btn-primary w-100 mb-3">View More Balances</button>
+                            }
+                            @if (_currentTransactions.Count > 1)
+                            {
+                                <button @onclick="TransOnClick" class="btn btn-primary w-100">View More Transactions</button>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-evenly mt-5">
+                    
+                    <div class="w-25" style="max-width: 50rem;">
+                        @if (_viewBalStw && _allBalances.Count > 1)
+                        {
+                            <h2 class="mb-2">More Balances: </h2>
+                            @foreach (var balance in _allBalances)
+                            {
+                                <div class="card border-secondary mb-3 ">
+                                    <div class="card-header">
+                                        <h4 class="card-title">Name: @balance.Name</h4>
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="card-text">Token Address: @balance.Token_Address</p>
+                                        <p class="card-text">Token Symbol: @balance.Symbol</p>
+                                        <p class="card-text">Token Balance: @balance.Balance_Formatted</p>
+                                        <p class="card-text">Verified Contract: @YesOrNo(balance.Verified_Contract)</p>
+                                        <p class="card-text">Possible Spam: @YesOrNo(balance.Possible_Spam)</p>
+                                    </div>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            if (_allBalances.Count > 1)
+                            {
+                                <p class="text-center alert alert-info">Click View More Balances</p>
+                            }
+                            else
+                            {
+                                <p class="text-center alert alert-info">No Current Balances For This Wallet</p>
+                            }
+                        }
+                    </div>
+
+                    <div class="w-25" style="max-width: 50rem;">
+                        @if (_viewTransStw && _currentTransactions.Count > 1)
+                        {
+                            <h2 class="mb-2">More Transactions: </h2>
+                            @foreach (var transaction in _currentTransactions)
+                            {
+                                <div class="card border-secondary mb-3">
+                                    <div class="card-header">
+                                        <h4 class="card-title">Block Number: @transaction.BlockNumber</h4>
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="card-text">From: @transaction.From -> To: @transaction.To</p>
+                                        <p class="card-text">Amount: @transaction.Value</p>
+                                    </div>
+                                </div>
+                            }
+
+                        }
+                        else
+                        {
+                            if (_currentTransactions.Count >= 1)
+                            {
+                                <p class="text-center alert alert-info">Click View More Transactions</p>
+                            }
+                            else
+                            {
+                                <p class="text-center alert alert-info">No Current Transactions For This Wallet</p>
+                            }
+                        }
+                    </div>
+
+                </div>
+            }
+            else
+            {
+                if (_firstBalance is null)
+                {
+                    <p>Nothing Here... Try Searching!</p>
+                }
+                
+                if (_error)
+                {
+                    <p>An Error Has Occured or Wallet Address Is Not Found, Please Try Again Later...</p>
+                }
+            }
+
+        </div>
+    </div>
+
+</main>
+
+
+@code {
+    // TODO: persist Balances and Transactions if favorite button is pressed
+
+    private List<BalanceDto> _allBalances = new();
+    private List<TransactionHistory> _currentTransactions = new();
+    private BalanceDto _firstBalance;
+    
+    private string _walletAddress = string.Empty;
+    private string _transQuantity = string.Empty;
+    
+    private bool _viewBalStw;
+    private bool _viewTransStw;
+    
+    private record ErrorMessage(string Field, string Message);
+    private ErrorMessage inputerror;
+    private bool _error;
+    
+    private async Task SearchAddress(string address)
+    {
+        // form validation
+        if(_walletAddress != string.Empty)
+        {
+            inputerror = new ErrorMessage("address", "Please enter a valid address");
+        }
+        if (!int.TryParse(_transQuantity, out var limit))
+        {
+            inputerror = new ErrorMessage("transQuantity", "Please enter a valid quantity");
+        }
+        
+        
+        _allBalances = await balanceService.GetBalances(address);
+        if (_allBalances is null)
+        {
+            _error = !_error;
+        }
+        else
+        {
+            _error = false;
+            _firstBalance = new BalanceDto
+            {
+                Name = _allBalances[0].Name,
+                Token_Address = _allBalances[0].Token_Address,
+                Symbol = _allBalances[0].Symbol,
+                Balance_Formatted = _allBalances[0].Balance_Formatted,
+                Verified_Contract = _allBalances[0].Verified_Contract,
+                Possible_Spam = _allBalances[0].Possible_Spam
+            };
+        }
+        
+        Console.WriteLine("In the Search Address Method");
+
+        /* Search for the address in the API*/
+        var response = await SFS.GetNativeTransactionsAsync(_walletAddress, limit);
+        
+
+        response.ForEach(t =>
+        {
+            _currentTransactions.Add(new TransactionHistory()
+            {
+                BlockNumber = long.Parse(t.block_number),
+                ChainId = 0001,
+                From = t.from_address,
+                Success = true,
+                To = t.to_address,
+                Value = decimal.Parse(t.value),
+            });
+        });   
+
+    }
+
+    private string YesOrNo(bool value)
+    {
+        return value ? "Yes" : "No";
+    }
+
+    private void MoreBalOnClick()
+    {
+        // TODO: On click return all balances except first index
+        _viewBalStw = !_viewBalStw;
+    }
+
+    private void TransOnClick() => _viewTransStw = !_viewTransStw;
+
+    private void AddToBookmarked()
+    {
+        // TODO: When ever the button for this is clicked the Balance an its transactions will be added to the database table
+    }
+
+    private async Task BookMarkItem() {
+    }
+    
+}

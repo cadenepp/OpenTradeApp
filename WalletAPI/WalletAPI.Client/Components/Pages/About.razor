@@ -1,0 +1,241 @@
+@page "/about"
+
+<PageTitle>About</PageTitle>
+
+<div class="container py-5">
+    <div class="row justify-content-center mb-4">
+        <div class="col-lg-10">
+            <div class="p-4 p-md-5 bg-light border rounded-4 shadow-sm">
+                <h1 class="display-6 mb-2">About Our Final Project</h1>
+                <p class="lead mb-0">
+                    <span class="badge text-bg-primary me-2">Adv .NET</span>
+                    Secure Data Aggregation Platform • Role-Based Dashboard • Neon DB • OpenIddict
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="row justify-content-center g-4">
+        <div class="col-lg-5">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body p-4">
+                    <h3 class="h5 mb-3">
+                        <i class="bi bi-info-circle me-2"></i>
+                        What this project is about
+                    </h3>
+                    <p class="mb-3">
+                        This application is an <strong>ETH Network Wallet Search</strong> dashboard that lets users look up
+                        Ethereum wallet addresses and view <strong>balances</strong> and <strong>transactions</strong>.
+                        It pulls live blockchain data using the <strong>Moralis API</strong>, then presents it in a clean,
+                        searchable UI.
+                    </p>
+
+                    <div class="alert alert-primary mb-0" role="alert">
+                        <strong>Core idea:</strong> Securely aggregate public API data and present it in a dashboard
+                        while following modern .NET architecture and security best practices.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body p-4">
+                    <h3 class="h5 mb-3">
+                        <i class="bi bi-bullseye me-2"></i>
+                        What this project is for
+                    </h3>
+                    <p class="mb-3">
+                        This project was built as our <strong>final for Advanced .NET</strong>. We were tasked with
+                        building a prototype <strong>Secure Data Aggregation Platform</strong> that demonstrates:
+                    </p>
+
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item px-0">
+                            <strong>Repository Design Pattern</strong> to enforce clean separation of concerns
+                        </li>
+                        <li class="list-group-item px-0">
+                            <strong>Neon DB</strong> (serverless PostgreSQL) with <strong>EF Core + Npgsql</strong> and
+                            <strong>Migrations</strong> for schema management
+                        </li>
+                        <li class="list-group-item px-0">
+                            <strong>OpenIddict</strong> as our self-hosted authentication service
+                            (Authorization Server) with <strong>Role-Based Access Control</strong>
+                        </li>
+                        <li class="list-group-item px-0">
+                            A <strong>dashboard/reporting</strong> experience based on saved query data
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row justify-content-center mt-4">
+        <div class="col-lg-10">
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-4 p-md-5">
+                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3">
+                        <h2 class="h4 mb-0">Key Features & Security Model</h2>
+                        <a class="btn btn-outline-dark btn-sm"
+                           href="https://github.com/cadenepp/MoralisWalletAPI"
+                           target="_blank" rel="noopener">
+                            <i class="bi bi-github me-2"></i>View GitHub Repo
+                        </a>
+                    </div>
+
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded-3 h-100">
+                                <h3 class="h6 mb-2">Public API Integration</h3>
+                                <p class="mb-0">
+                                    Users can search an Ethereum wallet address and retrieve live data via the
+                                    <strong>Moralis API</strong>, including <strong>balances</strong> and
+                                    <strong>transactions</strong>.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded-3 h-100">
+                                <h3 class="h6 mb-2">Data Persistence</h3>
+                                <p class="mb-0">
+                                    Signed-in users can <strong>favorite</strong> wallet searches so they can quickly
+                                    revisit balances/transactions later. Favorites are stored in our database
+                                    using EF Core repositories.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded-3 h-100">
+                                <h3 class="h6 mb-2">Authentication & Authorization</h3>
+                                <p class="mb-0">
+                                    We implemented our own identity infrastructure with <strong>OpenIddict</strong>,
+                                    issuing tokens and enforcing <strong>RBAC</strong> through roles and policy-based
+                                    authorization.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded-3 h-100">
+                                <h3 class="h6 mb-2">Role-Based Access Control</h3>
+                                <ul class="mb-0">
+                                    <li><strong>Guest:</strong> Can use wallet search and view About/Home.</li>
+                                    <li><strong>Signed-in User:</strong> Can favorite searches and view their saved history.</li>
+                                    <li><strong>Admin:</strong> Full access plus admin-only management capabilities.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-4" />
+
+                    <div class="row g-4">
+                        <div class="col-md-7">
+                            <h3 class="h5 mb-2">Architecture Notes</h3>
+                            <p class="mb-0">
+                                The application follows clean architecture principles: UI pages call into injected services,
+                                services use <strong>repositories</strong> for data access, and the database layer uses
+                                <strong>EF Core + Npgsql</strong> against <strong>Neon DB</strong>. OpenIddict handles secure
+                                sign-in/token issuance so role claims can be enforced throughout the app.
+                            </p>
+                        </div>
+
+                        <div class="col-md-5">
+                            <div class="bg-light border rounded-3 p-3 h-100">
+                                <h3 class="h6 mb-2">Tech Stack</h3>
+                                <ul class="mb-0">
+                                    <li>.NET (Blazor)</li>
+                                    <li>Bootstrap (UI)</li>
+                                    <li>Neon DB (PostgreSQL)</li>
+                                    <li>EF Core + Npgsql + Migrations</li>
+                                    <li>OpenIddict (Auth/RBAC)</li>
+                                    <li>Moralis API (ETH wallet data)</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row justify-content-center mt-4">
+        <div class="col-lg-10">
+            <div class="card shadow-sm border-0">
+                <div class="card-body p-4 p-md-5">
+                    <h2 class="h4 mb-3">Who worked on what</h2>
+
+                    <div class="row g-3">
+                        <div class="col-md-6 col-lg-3">
+                            <div class="border rounded-3 p-3 h-100">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <span class="badge text-bg-success">Caden</span>
+                                    <span class="fw-semibold">Balances</span>
+                                </div>
+                                <p class="mb-0 small text-muted">
+                                    Implemented wallet balance retrieval and display using the Moralis endpoints,
+                                    plus the related UI wiring.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 col-lg-3">
+                            <div class="border rounded-3 p-3 h-100">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <span class="badge text-bg-info">Ashley</span>
+                                    <span class="fw-semibold">Transactions</span>
+                                </div>
+                                <p class="mb-0 small text-muted">
+                                    Built the transaction search/results experience and ensured transaction data
+                                    is clearly presented in the dashboard.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 col-lg-3">
+                            <div class="border rounded-3 p-3 h-100">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <span class="badge text-bg-warning">Arun</span>
+                                    <span class="fw-semibold">User Features</span>
+                                </div>
+                                <p class="mb-0 small text-muted">
+                                    Implemented user-focused functionality like favorites/history and the data persistence
+                                    flow tied to signed-in accounts.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6 col-lg-3">
+                            <div class="border rounded-3 p-3 h-100">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <span class="badge text-bg-danger">Jackson</span>
+                                    <span class="fw-semibold">Authentication</span>
+                                </div>
+                                <p class="mb-0 small text-muted">
+                                    Led authentication and RBAC setup using OpenIddict, including role handling and
+                                    secure access to protected features.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-secondary mt-4 mb-0" role="alert">
+                        Together, we focused on building a polished prototype that demonstrates secure authentication,
+                        clean architecture, and real-world API integration with persistent user features.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row justify-content-center mt-4">
+        <div class="col-lg-10 text-center text-muted small">
+            <p class="mb-0">
+                Built for Advanced .NET • Secure Data Aggregation Platform Prototype • Instructor: Jarrett Plate
+            </p>
+        </div>
+    </div>
+</div>
