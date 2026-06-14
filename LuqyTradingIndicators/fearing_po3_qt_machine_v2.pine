@@ -1,0 +1,608 @@
+//@version=5
+indicator("Fearing PO3 x QT Machine v2", "PO3 x QT v2", overlay=true, max_lines_count=500, max_boxes_count=250, max_labels_count=250)
+
+// Research indicator based on publicly described PO3, Quarterly Theory, MMXM,
+// SMT, CISD, liquidity, and OTE concepts. It does not reproduce private QT rules.
+
+//=============================================================================
+// Inputs
+//=============================================================================
+
+groupCore = "Core Model"
+tz = input.string("America/New_York", "Model timezone", group=groupCore)
+entryMode = input.string("CISD", "Entry mode", options=["CISD", "CISD Reprice"], group=groupCore)
+requireNarrative = input.bool(true, "Require higher-timeframe narrative", group=groupCore)
+minScore = input.int(16, "Minimum setup score", minval=5, maxval=40, group=groupCore)
+signalWindow = input.session("0930-1130", "Primary signal window", group=groupCore)
+
+groupNarrative = "MMXM / PO3 Narrative"
+useYear = input.bool(true, "Yearly PO3", inline="htf1", group=groupNarrative)
+useQuarter = input.bool(true, "Quarterly PO3", inline="htf1", group=groupNarrative)
+useMonth = input.bool(true, "Monthly PO3", inline="htf1", group=groupNarrative)
+useWeek = input.bool(true, "Weekly PO3", inline="htf2", group=groupNarrative)
+useDay = input.bool(true, "Daily PO3", inline="htf2", group=groupNarrative)
+minHtfVotes = input.int(3, "Minimum aligned HTF cycles", minval=1, maxval=5, group=groupNarrative)
+biasTf = input.timeframe("60", "Tie-breaker timeframe", group=groupNarrative)
+biasEmaLen = input.int(100, "Tie-breaker EMA", minval=10, maxval=500, group=groupNarrative)
+
+groupTime = "PO3 / Quarterly Time"
+use930Model = input.bool(true, "Enable 9:30 30m PO3", group=groupTime)
+accumMinutes = input.int(5, "9:30 accumulation minutes", minval=1, maxval=15, group=groupTime)
+use4hModel = input.bool(true, "Enable custom 4h PO3", group=groupTime)
+fourHourAnchor = input.int(2, "4h anchor hour ET", minval=0, maxval=3, group=groupTime, tooltip="2 creates 2, 6, 10, 14, 18, 22 ET cycles")
+showQuarterBands = input.bool(false, "Show active time-quarter tint", group=groupTime)
+
+groupOpens = "Opening Anchors"
+showMo = input.bool(true, "Midnight open", inline="opens1", group=groupOpens)
+showTwoDay = input.bool(true, "2-day open", inline="opens1", group=groupOpens)
+showFourHourOpen = input.bool(true, "4h open", inline="opens2", group=groupOpens)
+show930Open = input.bool(true, "9:30 open", inline="opens2", group=groupOpens)
+showHtfOpens = input.bool(false, "Week / Month / Quarter opens", group=groupOpens)
+
+groupSmt = "SMT Triad"
+useSmt = input.bool(true, "Require SMT", group=groupSmt)
+smtSymbol1 = input.symbol("CME_MINI:ES1!", "Comparison 1", group=groupSmt)
+smtSymbol2 = input.symbol("CBOT_MINI:YM1!", "Comparison 2", group=groupSmt)
+minSmtStages = input.int(1, "Minimum SMT stages", minval=1, maxval=4, group=groupSmt)
+localSmtLookback = input.int(12, "Local SMT lookback", minval=3, maxval=50, group=groupSmt)
+
+groupDelivery = "Manipulation / CISD"
+swingLen = input.int(3, "Liquidity swing length", minval=1, maxval=20, group=groupDelivery)
+setupLifeBars = input.int(30, "Manipulation validity bars", minval=3, maxval=100, group=groupDelivery)
+atrLen = input.int(14, "ATR length", minval=1, group=groupDelivery)
+dispAtrMult = input.float(0.8, "Displacement range x ATR", minval=0.1, step=0.05, group=groupDelivery)
+minBodyPct = input.float(0.55, "Displacement body %", minval=0.1, maxval=1.0, step=0.05, group=groupDelivery)
+stopBufferAtr = input.float(0.08, "Stop buffer ATR", minval=0.0, maxval=1.0, step=0.01, group=groupDelivery)
+
+groupReprice = "OTE / Repricing"
+oteShallow = input.float(0.62, "OTE shallow", minval=0.01, maxval=0.99, step=0.001, group=groupReprice)
+oteMid = input.float(0.705, "OTE core", minval=0.01, maxval=0.99, step=0.001, group=groupReprice)
+oteDeep = input.float(0.79, "OTE deep", minval=0.01, maxval=0.99, step=0.001, group=groupReprice)
+repriceLifeBars = input.int(40, "Reprice zone life", minval=5, maxval=150, group=groupReprice)
+showFvg = input.bool(true, "Show setup FVG", group=groupReprice)
+showOb = input.bool(true, "Show CISD order block", group=groupReprice)
+
+groupTargets = "Targets / Management"
+targetMode = input.string("External liquidity", "Primary target", options=["External liquidity", "Previous day", "Accumulation boundary"], group=groupTargets)
+showManagement = input.bool(true, "Show stop / target", group=groupTargets)
+
+groupVisual = "Visuals"
+visualPreset = input.string("Clean", "Visual preset", options=["Clean", "Balanced", "Full"], group=groupVisual)
+keepHistory = input.bool(false, "Keep old signal labels", group=groupVisual)
+showDashboard = input.bool(true, "Show dashboard", group=groupVisual)
+showLiquidity = input.bool(false, "Show raw liquidity sweeps", group=groupVisual)
+
+groupTags = "Cycle Tags"
+showCycleTags = input.bool(true, "Show numerology / lunar tags", group=groupTags)
+useCycleTagsInScore = input.bool(false, "Include tags in score", group=groupTags)
+
+cleanMode = visualPreset == "Clean"
+fullMode = visualPreset == "Full"
+
+//=============================================================================
+// Helpers
+//=============================================================================
+
+f_dir(_open, _close) =>
+    _close > _open ? 1 : _close < _open ? -1 : 0
+
+f_used_vote(_enabled, _dir, _wanted) =>
+    _enabled and _dir == _wanted ? 1 : 0
+
+f_bull_smt(_aLow, _aPrevLow, _bLow, _bPrevLow, _cLow, _cPrevLow) =>
+    (_aLow < _aPrevLow and (_bLow >= _bPrevLow or _cLow >= _cPrevLow)) or
+     (_bLow < _bPrevLow and (_aLow >= _aPrevLow or _cLow >= _cPrevLow)) or
+     (_cLow < _cPrevLow and (_aLow >= _aPrevLow or _bLow >= _bPrevLow))
+
+f_bear_smt(_aHigh, _aPrevHigh, _bHigh, _bPrevHigh, _cHigh, _cPrevHigh) =>
+    (_aHigh > _aPrevHigh and (_bHigh <= _bPrevHigh or _cHigh <= _cPrevHigh)) or
+     (_bHigh > _bPrevHigh and (_aHigh <= _aPrevHigh or _cHigh <= _cPrevHigh)) or
+     (_cHigh > _cPrevHigh and (_aHigh <= _aPrevHigh or _bHigh <= _bPrevHigh))
+
+f_grade(_score) =>
+    _score >= 24 ? "A+" : _score >= 20 ? "A" : _score >= 16 ? "B" : _score >= 12 ? "C" : "WAIT"
+
+f_phase_name(_dir) =>
+    _dir == 1 ? "Bull distribution" : _dir == -1 ? "Bear distribution" : "Accumulation"
+
+f_quarter_color(_quarter) =>
+    _quarter == 1 ? color.new(color.gray, 94) : _quarter == 2 ? color.new(color.orange, 94) : _quarter == 3 ? color.new(color.teal, 94) : color.new(color.blue, 94)
+
+//=============================================================================
+// Core price and time
+//=============================================================================
+
+atr = ta.atr(atrLen)
+candleRange = math.max(high - low, syminfo.mintick)
+bodyPct = math.abs(close - open) / candleRange
+bullDisplacement = close > open and candleRange >= atr * dispAtrMult and bodyPct >= minBodyPct
+bearDisplacement = close < open and candleRange >= atr * dispAtrMult and bodyPct >= minBodyPct
+
+nyHour = hour(time, tz)
+nyMinute = minute(time, tz)
+nyMinutes = nyHour * 60 + nyMinute
+signalTime = not na(time(timeframe.period, signalWindow, tz))
+
+dateKey = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+newCalendarDay = dateKey != dateKey[1]
+
+// Midnight open is the public daily PO3 anchor.
+var float midnightOpen = na
+if newCalendarDay or na(midnightOpen)
+    midnightOpen := open
+
+// Deterministic 2-day anchor. The parity resets monthly; it remains a visible research anchor.
+var float twoDayOpen = na
+if na(twoDayOpen) or newCalendarDay and dayofmonth(time, tz) % 2 == 1
+    twoDayOpen := open
+
+weekOpen = request.security(syminfo.tickerid, "W", open, lookahead=barmerge.lookahead_off)
+monthOpen = request.security(syminfo.tickerid, "M", open, lookahead=barmerge.lookahead_off)
+quarterOpen = request.security(syminfo.tickerid, "3M", open, lookahead=barmerge.lookahead_off)
+yearOpen = request.security(syminfo.tickerid, "12M", open, lookahead=barmerge.lookahead_off)
+
+// 9:30 30-minute PO3.
+in930Cycle = nyMinutes >= 570 and nyMinutes < 600
+new930Cycle = in930Cycle and not in930Cycle[1]
+in930Accum = nyMinutes >= 570 and nyMinutes < 570 + accumMinutes
+
+var float po3Open30 = na
+var float po3High30 = na
+var float po3Low30 = na
+var float accumulationHigh = na
+var float accumulationLow = na
+
+if new930Cycle
+    po3Open30 := open
+    po3High30 := high
+    po3Low30 := low
+    accumulationHigh := high
+    accumulationLow := low
+else if in930Cycle
+    po3High30 := math.max(nz(po3High30, high), high)
+    po3Low30 := math.min(nz(po3Low30, low), low)
+    if in930Accum
+        accumulationHigh := math.max(nz(accumulationHigh, high), high)
+        accumulationLow := math.min(nz(accumulationLow, low), low)
+
+elapsed930 = nyMinutes - 570
+quarter30 = in930Cycle ? int(math.min(4, math.floor(elapsed930 / 7.5) + 1)) : 0
+
+// Custom 4-hour cycle aligned to 2, 6, 10, 14, 18, 22 ET by default.
+fourHourOffset = (nyMinutes - fourHourAnchor * 60 + 1440) % 1440
+fourHourBucket = int(math.floor(fourHourOffset / 240))
+newFourHour = fourHourBucket != fourHourBucket[1]
+var float po3Open4h = na
+var float po3High4h = na
+var float po3Low4h = na
+
+if newFourHour or na(po3Open4h)
+    po3Open4h := open
+    po3High4h := high
+    po3Low4h := low
+else
+    po3High4h := math.max(nz(po3High4h, high), high)
+    po3Low4h := math.min(nz(po3Low4h, low), low)
+
+elapsed4h = fourHourOffset % 240
+quarter4h = int(math.floor(elapsed4h / 60) + 1)
+dailyQuarter = int(math.floor(nyMinutes / 360) + 1)
+
+//=============================================================================
+// Higher-timeframe PO3 narrative
+//=============================================================================
+
+[yOpen, yHigh, yLow, yClose] = request.security(syminfo.tickerid, "12M", [open, high, low, close], lookahead=barmerge.lookahead_off)
+[qOpen, qHigh, qLow, qClose] = request.security(syminfo.tickerid, "3M", [open, high, low, close], lookahead=barmerge.lookahead_off)
+[mOpen, mHigh, mLow, mClose] = request.security(syminfo.tickerid, "M", [open, high, low, close], lookahead=barmerge.lookahead_off)
+[wOpen, wHigh, wLow, wClose] = request.security(syminfo.tickerid, "W", [open, high, low, close], lookahead=barmerge.lookahead_off)
+[dOpen, dHigh, dLow, dClose] = request.security(syminfo.tickerid, "D", [open, high, low, close], lookahead=barmerge.lookahead_off)
+
+yDir = f_dir(yOpen, yClose)
+qDir = f_dir(qOpen, qClose)
+mDir = f_dir(mOpen, mClose)
+wDir = f_dir(wOpen, wClose)
+dDir = close > midnightOpen ? 1 : close < midnightOpen ? -1 : 0
+
+bullVotes = f_used_vote(useYear, yDir, 1) + f_used_vote(useQuarter, qDir, 1) + f_used_vote(useMonth, mDir, 1) + f_used_vote(useWeek, wDir, 1) + f_used_vote(useDay, dDir, 1)
+bearVotes = f_used_vote(useYear, yDir, -1) + f_used_vote(useQuarter, qDir, -1) + f_used_vote(useMonth, mDir, -1) + f_used_vote(useWeek, wDir, -1) + f_used_vote(useDay, dDir, -1)
+
+biasClose = request.security(syminfo.tickerid, biasTf, close, lookahead=barmerge.lookahead_off)
+biasEma = request.security(syminfo.tickerid, biasTf, ta.ema(close, biasEmaLen), lookahead=barmerge.lookahead_off)
+tieDir = biasClose > biasEma ? 1 : biasClose < biasEma ? -1 : 0
+narrativeDir = bullVotes > bearVotes ? 1 : bearVotes > bullVotes ? -1 : tieDir
+narrativeVotes = narrativeDir == 1 ? bullVotes : narrativeDir == -1 ? bearVotes : 0
+narrativeValid = not requireNarrative or narrativeVotes >= minHtfVotes
+
+bullManipHtf = (useYear and yDir == 1 and yLow < yOpen) or (useQuarter and qDir == 1 and qLow < qOpen) or (useMonth and mDir == 1 and mLow < mOpen) or (useWeek and wDir == 1 and wLow < wOpen) or (useDay and dDir == 1 and low < midnightOpen)
+bearManipHtf = (useYear and yDir == -1 and yHigh > yOpen) or (useQuarter and qDir == -1 and qHigh > qOpen) or (useMonth and mDir == -1 and mHigh > mOpen) or (useWeek and wDir == -1 and wHigh > wOpen) or (useDay and dDir == -1 and high > midnightOpen)
+
+//=============================================================================
+// Liquidity map
+//=============================================================================
+
+pivotHigh = ta.pivothigh(high, swingLen, swingLen)
+pivotLow = ta.pivotlow(low, swingLen, swingLen)
+var float lastSwingHigh = na
+var float lastSwingLow = na
+if not na(pivotHigh)
+    lastSwingHigh := pivotHigh
+if not na(pivotLow)
+    lastSwingLow := pivotLow
+
+buySideSweep = not na(lastSwingHigh) and high > lastSwingHigh and close < lastSwingHigh
+sellSideSweep = not na(lastSwingLow) and low < lastSwingLow and close > lastSwingLow
+
+[prevDayHigh, prevDayLow] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+[prevWeekHigh, prevWeekLow] = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+[prev30High, prev30Low] = request.security(syminfo.tickerid, "30", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+[prev90High, prev90Low] = request.security(syminfo.tickerid, "90", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+[prev4hHigh, prev4hLow] = request.security(syminfo.tickerid, "240", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+
+bullLocation = low <= nz(accumulationLow, low) or low <= prev30Low or low <= prev90Low or low <= prevDayLow or sellSideSweep
+bearLocation = high >= nz(accumulationHigh, high) or high >= prev30High or high >= prev90High or high >= prevDayHigh or buySideSweep
+
+//=============================================================================
+// SMT triad across aligned ranges
+//=============================================================================
+
+[a30H, a30L, a30PH, a30PL] = request.security(syminfo.tickerid, "30", [high, low, high[1], low[1]], lookahead=barmerge.lookahead_off)
+[b30H, b30L, b30PH, b30PL] = request.security(smtSymbol1, "30", [high, low, high[1], low[1]], ignore_invalid_symbol=true, lookahead=barmerge.lookahead_off)
+[c30H, c30L, c30PH, c30PL] = request.security(smtSymbol2, "30", [high, low, high[1], low[1]], ignore_invalid_symbol=true, lookahead=barmerge.lookahead_off)
+
+[a90H, a90L, a90PH, a90PL] = request.security(syminfo.tickerid, "90", [high, low, high[1], low[1]], lookahead=barmerge.lookahead_off)
+[b90H, b90L, b90PH, b90PL] = request.security(smtSymbol1, "90", [high, low, high[1], low[1]], ignore_invalid_symbol=true, lookahead=barmerge.lookahead_off)
+[c90H, c90L, c90PH, c90PL] = request.security(smtSymbol2, "90", [high, low, high[1], low[1]], ignore_invalid_symbol=true, lookahead=barmerge.lookahead_off)
+
+[a4H, a4L, a4PH, a4PL] = request.security(syminfo.tickerid, "240", [high, low, high[1], low[1]], lookahead=barmerge.lookahead_off)
+[b4H, b4L, b4PH, b4PL] = request.security(smtSymbol1, "240", [high, low, high[1], low[1]], ignore_invalid_symbol=true, lookahead=barmerge.lookahead_off)
+[c4H, c4L, c4PH, c4PL] = request.security(smtSymbol2, "240", [high, low, high[1], low[1]], ignore_invalid_symbol=true, lookahead=barmerge.lookahead_off)
+
+[aDH, aDL, aDPH, aDPL] = request.security(syminfo.tickerid, "D", [high, low, high[1], low[1]], lookahead=barmerge.lookahead_off)
+[bDH, bDL, bDPH, bDPL] = request.security(smtSymbol1, "D", [high, low, high[1], low[1]], ignore_invalid_symbol=true, lookahead=barmerge.lookahead_off)
+[cDH, cDL, cDPH, cDPL] = request.security(smtSymbol2, "D", [high, low, high[1], low[1]], ignore_invalid_symbol=true, lookahead=barmerge.lookahead_off)
+
+bLocalH = request.security(smtSymbol1, timeframe.period, high, ignore_invalid_symbol=true)
+bLocalL = request.security(smtSymbol1, timeframe.period, low, ignore_invalid_symbol=true)
+cLocalH = request.security(smtSymbol2, timeframe.period, high, ignore_invalid_symbol=true)
+cLocalL = request.security(smtSymbol2, timeframe.period, low, ignore_invalid_symbol=true)
+
+localBullSmt = f_bull_smt(low, ta.lowest(low[1], localSmtLookback), bLocalL, ta.lowest(bLocalL[1], localSmtLookback), cLocalL, ta.lowest(cLocalL[1], localSmtLookback))
+localBearSmt = f_bear_smt(high, ta.highest(high[1], localSmtLookback), bLocalH, ta.highest(bLocalH[1], localSmtLookback), cLocalH, ta.highest(cLocalH[1], localSmtLookback))
+bullSmt30 = f_bull_smt(a30L, a30PL, b30L, b30PL, c30L, c30PL)
+bearSmt30 = f_bear_smt(a30H, a30PH, b30H, b30PH, c30H, c30PH)
+bullSmt90 = f_bull_smt(a90L, a90PL, b90L, b90PL, c90L, c90PL)
+bearSmt90 = f_bear_smt(a90H, a90PH, b90H, b90PH, c90H, c90PH)
+bullSmt4h = f_bull_smt(a4L, a4PL, b4L, b4PL, c4L, c4PL)
+bearSmt4h = f_bear_smt(a4H, a4PH, b4H, b4PH, c4H, c4PH)
+bullSmtD = f_bull_smt(aDL, aDPL, bDL, bDPL, cDL, cDPL)
+bearSmtD = f_bear_smt(aDH, aDPH, bDH, bDPH, cDH, cDPH)
+
+bullSmtCount = (localBullSmt ? 1 : 0) + (bullSmt30 ? 1 : 0) + (bullSmt90 ? 1 : 0) + (bullSmt4h or bullSmtD ? 1 : 0)
+bearSmtCount = (localBearSmt ? 1 : 0) + (bearSmt30 ? 1 : 0) + (bearSmt90 ? 1 : 0) + (bearSmt4h or bearSmtD ? 1 : 0)
+bullSmtValid = not useSmt or bullSmtCount >= minSmtStages
+bearSmtValid = not useSmt or bearSmtCount >= minSmtStages
+
+//=============================================================================
+// Timed manipulation memory
+//=============================================================================
+
+bull930Manip = use930Model and in930Cycle and not in930Accum and low < po3Open30 and low <= nz(accumulationLow, low)
+bear930Manip = use930Model and in930Cycle and not in930Accum and high > po3Open30 and high >= nz(accumulationHigh, high)
+bull4hManip = use4hModel and low < po3Open4h and (low <= prev30Low or low <= prev90Low or sellSideSweep)
+bear4hManip = use4hModel and high > po3Open4h and (high >= prev30High or high >= prev90High or buySideSweep)
+
+bullManipNow = (bull930Manip or bull4hManip) and bullLocation and bullSmtValid
+bearManipNow = (bear930Manip or bear4hManip) and bearLocation and bearSmtValid
+
+var int bullManipBar = na
+var int bearManipBar = na
+var float bullManipLow = na
+var float bearManipHigh = na
+var int bullManipSmt = 0
+var int bearManipSmt = 0
+var bool bullManipLocation = false
+var bool bearManipLocation = false
+
+if bullManipNow
+    bullManipBar := bar_index
+    bullManipLow := na(bullManipLow) or not na(bullManipBar[1]) and bar_index - bullManipBar[1] > setupLifeBars ? low : math.min(nz(bullManipLow, low), low)
+    bullManipSmt := bullSmtCount
+    bullManipLocation := bullLocation
+
+if bearManipNow
+    bearManipBar := bar_index
+    bearManipHigh := na(bearManipHigh) or not na(bearManipBar[1]) and bar_index - bearManipBar[1] > setupLifeBars ? high : math.max(nz(bearManipHigh, high), high)
+    bearManipSmt := bearSmtCount
+    bearManipLocation := bearLocation
+
+bullPending = not na(bullManipBar) and bar_index - bullManipBar <= setupLifeBars
+bearPending = not na(bearManipBar) and bar_index - bearManipBar <= setupLifeBars
+
+//=============================================================================
+// Body-based CISD
+//=============================================================================
+
+var float bullishCisdLevel = na
+var float bearishCisdLevel = na
+
+if close < open
+    if not (close[1] < open[1])
+        bullishCisdLevel := open
+
+if close > open
+    if not (close[1] > open[1])
+        bearishCisdLevel := open
+
+bullCisdRaw = bullPending and not na(bullishCisdLevel) and close > bullishCisdLevel and close[1] <= bullishCisdLevel
+bearCisdRaw = bearPending and not na(bearishCisdLevel) and close < bearishCisdLevel and close[1] >= bearishCisdLevel
+
+bullNarrativeOk = narrativeValid and (not requireNarrative or narrativeDir == 1)
+bearNarrativeOk = narrativeValid and (not requireNarrative or narrativeDir == -1)
+
+//=============================================================================
+// Setup state, OTE, OB, FVG, targets
+//=============================================================================
+
+var int activeDir = 0
+var int setupBar = na
+var bool primaryFired = false
+var bool repriceFired = false
+var float setupLow = na
+var float setupHigh = na
+var float oteTop = na
+var float oteBottom = na
+var float ote705 = na
+var float setupEq = na
+var float setupStop = na
+var float setupTarget = na
+var float obTop = na
+var float obBottom = na
+var float fvgTop = na
+var float fvgBottom = na
+var int setupScore = 0
+var int setupSmtStages = 0
+var string setupReasons = "Waiting"
+
+var box oteBox = na
+var box obBox = na
+var box fvgBox = na
+var line line705 = na
+var line eqLine = na
+var line stopLine = na
+var line targetLine = na
+var label signalLabel = na
+
+f_clear_setup() =>
+    if not na(oteBox)
+        box.delete(oteBox)
+    if not na(obBox)
+        box.delete(obBox)
+    if not na(fvgBox)
+        box.delete(fvgBox)
+    if not na(line705)
+        line.delete(line705)
+    if not na(eqLine)
+        line.delete(eqLine)
+    if not na(stopLine)
+        line.delete(stopLine)
+    if not na(targetLine)
+        line.delete(targetLine)
+
+dateNumber = dateKey
+dateRoot = dateNumber > 0 ? ((dateNumber - 1) % 9) + 1 : 0
+newMoonEpoch = timestamp("GMT+0", 2000, 1, 6, 18, 14)
+lunarDays = ((time - newMoonEpoch) / 86400000.0) % 29.530588
+lunarPhase = lunarDays < 1.5 or lunarDays > 28.0 ? "New" : lunarDays > 13.0 and lunarDays < 16.5 ? "Full" : lunarDays < 14.75 ? "Waxing" : "Waning"
+cycleTagPoint = useCycleTagsInScore and (dateRoot == 3 or dateRoot == 6 or dateRoot == 9 or lunarPhase == "New" or lunarPhase == "Full") ? 1 : 0
+
+bullBaseScore = narrativeVotes * 2 + 3 + math.min(bullManipSmt, 3) * 2 + (bullManipLocation ? 2 : 0) + (bullDisplacement ? 2 : 0) + (bullManipHtf ? 2 : 0) + (signalTime ? 2 : 0) + cycleTagPoint
+bearBaseScore = narrativeVotes * 2 + 3 + math.min(bearManipSmt, 3) * 2 + (bearManipLocation ? 2 : 0) + (bearDisplacement ? 2 : 0) + (bearManipHtf ? 2 : 0) + (signalTime ? 2 : 0) + cycleTagPoint
+
+bullExternalTarget = prevDayHigh > high ? prevDayHigh : prevWeekHigh > high ? prevWeekHigh : not na(lastSwingHigh) and lastSwingHigh > high ? lastSwingHigh : high + atr * 3.0
+bearExternalTarget = prevDayLow < low ? prevDayLow : prevWeekLow < low ? prevWeekLow : not na(lastSwingLow) and lastSwingLow < low ? lastSwingLow : low - atr * 3.0
+
+bullSetup = bullCisdRaw and bullNarrativeOk and bullBaseScore >= minScore
+bearSetup = bearCisdRaw and bearNarrativeOk and bearBaseScore >= minScore
+
+if bullSetup
+    f_clear_setup()
+    activeDir := 1
+    setupBar := bar_index
+    primaryFired := false
+    repriceFired := false
+    setupLow := bullManipLow
+    setupHigh := high
+    setupRange = math.max(setupHigh - setupLow, syminfo.mintick)
+    oteTop := setupHigh - setupRange * oteShallow
+    oteBottom := setupHigh - setupRange * oteDeep
+    ote705 := setupHigh - setupRange * oteMid
+    setupEq := setupLow + setupRange * 0.5
+    setupStop := setupLow - atr * stopBufferAtr
+    setupTarget := targetMode == "Previous day" ? prevDayHigh : targetMode == "Accumulation boundary" ? nz(accumulationHigh, bullExternalTarget) : bullExternalTarget
+    setupScore := bullBaseScore
+    setupSmtStages := bullManipSmt
+    setupReasons := "HTF" + str.tostring(narrativeVotes) + " SMT" + str.tostring(setupSmtStages) + " CISD"
+    bullManipBar := na
+    bullManipLow := na
+    bullManipLocation := false
+    float foundTop = na
+    float foundBottom = na
+    int foundBar = na
+    for i = 1 to 12
+        if na(foundTop) and close[i] < open[i]
+            foundTop := high[i]
+            foundBottom := low[i]
+            foundBar := bar_index - i
+    obTop := foundTop
+    obBottom := foundBottom
+    fvgTop := low > high[2] ? low : na
+    fvgBottom := low > high[2] ? high[2] : na
+    oteBox := box.new(bar_index, oteTop, bar_index + repriceLifeBars, oteBottom, bgcolor=color.new(color.lime, 92), border_color=color.new(color.lime, 55), text=cleanMode ? "" : "OTE", text_color=color.lime, text_size=size.tiny)
+    line705 := line.new(bar_index, ote705, bar_index + repriceLifeBars, ote705, color=color.new(color.yellow, 15), style=line.style_dashed)
+    eqLine := line.new(bar_index, setupEq, bar_index + repriceLifeBars, setupEq, color=color.new(color.gray, 60), style=line.style_dotted)
+    if showOb and not na(obTop)
+        obBox := box.new(foundBar, obTop, bar_index + repriceLifeBars, obBottom, bgcolor=color.new(color.green, 94), border_color=color.new(color.green, 70), text=fullMode ? "CISD OB" : "", text_size=size.tiny)
+    if showFvg and not na(fvgTop)
+        fvgBox := box.new(bar_index - 2, fvgTop, bar_index + repriceLifeBars, fvgBottom, bgcolor=color.new(color.teal, 94), border_color=color.new(color.teal, 70), text=fullMode ? "FVG" : "", text_size=size.tiny)
+    if showManagement
+        stopLine := line.new(bar_index, setupStop, bar_index + repriceLifeBars, setupStop, color=color.new(color.red, 25), style=line.style_dotted)
+        targetLine := line.new(bar_index, setupTarget, bar_index + repriceLifeBars, setupTarget, color=color.new(color.lime, 15), width=2)
+
+if bearSetup
+    f_clear_setup()
+    activeDir := -1
+    setupBar := bar_index
+    primaryFired := false
+    repriceFired := false
+    setupHigh := bearManipHigh
+    setupLow := low
+    setupRange = math.max(setupHigh - setupLow, syminfo.mintick)
+    oteBottom := setupLow + setupRange * oteShallow
+    oteTop := setupLow + setupRange * oteDeep
+    ote705 := setupLow + setupRange * oteMid
+    setupEq := setupLow + setupRange * 0.5
+    setupStop := setupHigh + atr * stopBufferAtr
+    setupTarget := targetMode == "Previous day" ? prevDayLow : targetMode == "Accumulation boundary" ? nz(accumulationLow, bearExternalTarget) : bearExternalTarget
+    setupScore := bearBaseScore
+    setupSmtStages := bearManipSmt
+    setupReasons := "HTF" + str.tostring(narrativeVotes) + " SMT" + str.tostring(setupSmtStages) + " CISD"
+    bearManipBar := na
+    bearManipHigh := na
+    bearManipLocation := false
+    float foundTop = na
+    float foundBottom = na
+    int foundBar = na
+    for i = 1 to 12
+        if na(foundTop) and close[i] > open[i]
+            foundTop := high[i]
+            foundBottom := low[i]
+            foundBar := bar_index - i
+    obTop := foundTop
+    obBottom := foundBottom
+    fvgTop := high < low[2] ? low[2] : na
+    fvgBottom := high < low[2] ? high : na
+    oteBox := box.new(bar_index, oteTop, bar_index + repriceLifeBars, oteBottom, bgcolor=color.new(color.red, 92), border_color=color.new(color.red, 55), text=cleanMode ? "" : "OTE", text_color=color.red, text_size=size.tiny)
+    line705 := line.new(bar_index, ote705, bar_index + repriceLifeBars, ote705, color=color.new(color.yellow, 15), style=line.style_dashed)
+    eqLine := line.new(bar_index, setupEq, bar_index + repriceLifeBars, setupEq, color=color.new(color.gray, 60), style=line.style_dotted)
+    if showOb and not na(obTop)
+        obBox := box.new(foundBar, obTop, bar_index + repriceLifeBars, obBottom, bgcolor=color.new(color.red, 94), border_color=color.new(color.red, 70), text=fullMode ? "CISD OB" : "", text_size=size.tiny)
+    if showFvg and not na(fvgTop)
+        fvgBox := box.new(bar_index - 2, fvgTop, bar_index + repriceLifeBars, fvgBottom, bgcolor=color.new(color.maroon, 94), border_color=color.new(color.red, 70), text=fullMode ? "FVG" : "", text_size=size.tiny)
+    if showManagement
+        stopLine := line.new(bar_index, setupStop, bar_index + repriceLifeBars, setupStop, color=color.new(color.red, 25), style=line.style_dotted)
+        targetLine := line.new(bar_index, setupTarget, bar_index + repriceLifeBars, setupTarget, color=color.new(color.lime, 15), width=2)
+
+setupAlive = activeDir != 0 and not na(setupBar) and bar_index - setupBar <= repriceLifeBars
+if setupAlive
+    if not na(oteBox)
+        box.set_right(oteBox, bar_index + repriceLifeBars)
+    if not na(obBox)
+        box.set_right(obBox, bar_index + repriceLifeBars)
+    if not na(fvgBox)
+        box.set_right(fvgBox, bar_index + repriceLifeBars)
+    if not na(line705)
+        line.set_x2(line705, bar_index + repriceLifeBars)
+    if not na(eqLine)
+        line.set_x2(eqLine, bar_index + repriceLifeBars)
+    if not na(stopLine)
+        line.set_x2(stopLine, bar_index + repriceLifeBars)
+    if not na(targetLine)
+        line.set_x2(targetLine, bar_index + repriceLifeBars)
+
+if activeDir != 0 and not setupAlive
+    f_clear_setup()
+    activeDir := 0
+
+inBullOte = setupAlive and activeDir == 1 and bar_index > setupBar and low <= oteTop and high >= oteBottom
+inBearOte = setupAlive and activeDir == -1 and bar_index > setupBar and high >= oteBottom and low <= oteTop
+
+bullPrimary = bullSetup and entryMode == "CISD" and not primaryFired
+bearPrimary = bearSetup and entryMode == "CISD" and not primaryFired
+bullReprice = setupAlive and activeDir == 1 and entryMode == "CISD Reprice" and inBullOte and not repriceFired
+bearReprice = setupAlive and activeDir == -1 and entryMode == "CISD Reprice" and inBearOte and not repriceFired
+
+longSignal = bullPrimary or bullReprice
+shortSignal = bearPrimary or bearReprice
+
+if bullPrimary or bearPrimary
+    primaryFired := true
+if bullReprice or bearReprice
+    repriceFired := true
+
+if longSignal or shortSignal
+    if not keepHistory and not na(signalLabel)
+        label.delete(signalLabel)
+    directionText = longSignal ? "LONG" : "SHORT"
+    entryText = bullReprice or bearReprice ? "REPRICE" : "CISD"
+    signalText = directionText + " " + entryText + " " + f_grade(setupScore) + "\n" + setupReasons + " | Q" + str.tostring(in930Cycle ? quarter30 : quarter4h)
+    signalLabel := label.new(bar_index, longSignal ? low : high, signalText, style=longSignal ? label.style_label_up : label.style_label_down, color=longSignal ? color.new(color.green, 8) : color.new(color.red, 8), textcolor=color.white, size=cleanMode ? size.tiny : size.small)
+
+if setupAlive and ((activeDir == 1 and low < setupStop) or (activeDir == -1 and high > setupStop))
+    f_clear_setup()
+    activeDir := 0
+
+//=============================================================================
+// Visuals and alerts
+//=============================================================================
+
+plot(showMo ? midnightOpen : na, "Midnight Open", color=color.new(color.aqua, 15), linewidth=1, style=plot.style_linebr)
+plot(showTwoDay ? twoDayOpen : na, "2-Day Open", color=color.new(color.orange, 20), linewidth=1, style=plot.style_linebr)
+plot(showFourHourOpen ? po3Open4h : na, "4h PO3 Open", color=color.new(color.blue, 35), linewidth=1, style=plot.style_linebr)
+plot(show930Open and in930Cycle ? po3Open30 : na, "9:30 PO3 Open", color=color.new(color.yellow, 10), linewidth=2, style=plot.style_linebr)
+plot(showHtfOpens ? weekOpen : na, "Week Open", color=color.new(color.purple, 40), style=plot.style_linebr)
+plot(showHtfOpens ? monthOpen : na, "Month Open", color=color.new(color.fuchsia, 45), style=plot.style_linebr)
+plot(showHtfOpens ? quarterOpen : na, "Quarter Open", color=color.new(color.navy, 35), style=plot.style_linebr)
+
+plotshape(showLiquidity and sellSideSweep, "Sell-side raid", shape.circle, location.belowbar, color=color.new(color.lime, 25), size=size.tiny)
+plotshape(showLiquidity and buySideSweep, "Buy-side raid", shape.circle, location.abovebar, color=color.new(color.red, 25), size=size.tiny)
+plotshape(not cleanMode and bullCisdRaw, "Bull CISD", shape.triangleup, location.belowbar, color=color.lime, size=size.tiny, text="CISD")
+plotshape(not cleanMode and bearCisdRaw, "Bear CISD", shape.triangledown, location.abovebar, color=color.red, size=size.tiny, text="CISD")
+
+activeQuarter = in930Cycle ? quarter30 : quarter4h
+bgcolor(showQuarterBands ? f_quarter_color(activeQuarter) : na)
+barColor = bullDisplacement ? color.new(color.lime, 60) : bearDisplacement ? color.new(color.red, 60) : na
+barcolor(fullMode ? barColor : na)
+
+alertcondition(longSignal, "PO3 x QT Long", "Validated bullish PO3 x QT setup")
+alertcondition(shortSignal, "PO3 x QT Short", "Validated bearish PO3 x QT setup")
+alertcondition(bullCisdRaw, "Bullish CISD", "Bullish body-close CISD after manipulation")
+alertcondition(bearCisdRaw, "Bearish CISD", "Bearish body-close CISD after manipulation")
+
+//=============================================================================
+// Dashboard
+//=============================================================================
+
+var table dash = table.new(position.top_right, 2, 12, border_width=1)
+
+if showDashboard and barstate.islast
+    table.clear(dash, 0, 0, 1, 11)
+    headerColor = color.new(color.black, 0)
+    keyColor = color.new(color.gray, 78)
+    table.cell(dash, 0, 0, "PO3 x QT", bgcolor=headerColor, text_color=color.white)
+    table.cell(dash, 1, 0, visualPreset + " v2", bgcolor=headerColor, text_color=color.white)
+    table.cell(dash, 0, 1, "Narrative", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 1, narrativeDir == 1 ? "Bull " + str.tostring(bullVotes) + "/5" : narrativeDir == -1 ? "Bear " + str.tostring(bearVotes) + "/5" : "Neutral", text_color=color.white)
+    table.cell(dash, 0, 2, "HTF phase", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 2, f_phase_name(narrativeDir), text_color=color.white)
+    table.cell(dash, 0, 3, "30m PO3", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 3, in930Cycle ? "Q" + str.tostring(quarter30) + " @ " + str.tostring(po3Open30, format.mintick) : "Off", text_color=color.white)
+    table.cell(dash, 0, 4, "4h PO3", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 4, "Q" + str.tostring(quarter4h) + " @ " + str.tostring(po3Open4h, format.mintick), text_color=color.white)
+    table.cell(dash, 0, 5, "SMT stack", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 5, "B" + str.tostring(bullSmtCount) + " / S" + str.tostring(bearSmtCount), text_color=color.white)
+    table.cell(dash, 0, 6, "Manipulation", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 6, bullPending ? "Bull pending" : bearPending ? "Bear pending" : "Waiting", text_color=color.white)
+    table.cell(dash, 0, 7, "CISD", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 7, bullCisdRaw ? "Bull confirmed" : bearCisdRaw ? "Bear confirmed" : "Waiting", text_color=color.white)
+    table.cell(dash, 0, 8, "Active setup", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 8, activeDir == 1 ? "Long " + f_grade(setupScore) : activeDir == -1 ? "Short " + f_grade(setupScore) : "None", text_color=color.white)
+    table.cell(dash, 0, 9, "OTE / .705", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 9, setupAlive ? str.tostring(oteBottom, format.mintick) + "-" + str.tostring(oteTop, format.mintick) + " / " + str.tostring(ote705, format.mintick) : "None", text_color=color.white)
+    table.cell(dash, 0, 10, "Opens", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 10, "MO " + str.tostring(midnightOpen, format.mintick) + " | 2D " + str.tostring(twoDayOpen, format.mintick), text_color=color.white)
+    table.cell(dash, 0, 11, "Cycle tags", bgcolor=keyColor, text_color=color.white)
+    table.cell(dash, 1, 11, showCycleTags ? "Root " + str.tostring(dateRoot) + " | " + lunarPhase : "Off", text_color=color.white)
+
+if not showDashboard and barstate.islast
+    table.clear(dash, 0, 0, 1, 11)
